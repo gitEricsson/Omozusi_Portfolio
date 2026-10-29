@@ -1,6 +1,6 @@
 # Omozusi_Portfolio
 
-The portfolio website of **Omozusi Eguare**, a writer working across medicine and research, crypto and Web3, and writing for the screen.
+The portfolio website of **Omozusi Eguare**, a writer working across medicine and research, crypto and Web3, and YouTube scriptwriting.
 
 The site opens on an illustrated portrait of her that is alive. Her eyes follow the visitor's cursor (or finger) with the quick, jerky movements of real eyes. She blinks at natural intervals, her head turns slightly toward you, her curls move in a light breeze and her earring swings. Everything is drawn in real time in WebGL from a single illustration, so it never loops and never looks like a video.
 
