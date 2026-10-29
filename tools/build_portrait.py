@@ -316,6 +316,7 @@ def main():
     meta_hair = [float(xs.min()), float(xs.max())]
     meta = {
         "hairAtEyes": meta_hair,
+        "mouth": {"corners": lm["mouth"]["corners"]},
         "size": [w, h],
         "eyes": eyes,
         "neckPivot": lm["neck_pivot"],

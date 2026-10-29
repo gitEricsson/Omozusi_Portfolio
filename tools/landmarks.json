@@ -427,5 +427,40 @@
    -4,
    439
   ]
+ },
+ "mouth": {
+  "_note": "Lip corners and the line between the lips; the smile lifts the corners and the cheeks above them.",
+  "corners": [
+   [
+    419.3,
+    426.4
+   ],
+   [
+    522.1,
+    440.0
+   ]
+  ],
+  "lipLine": [
+   [
+    419.3,
+    426.4
+   ],
+   [
+    442.9,
+    430.7
+   ],
+   [
+    471.4,
+    435.0
+   ],
+   [
+    500.0,
+    437.9
+   ],
+   [
+    522.1,
+    440.0
+   ]
+  ]
  }
 }

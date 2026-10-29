@@ -30,10 +30,10 @@ It is a static site: plain HTML, CSS and JavaScript, with no framework, no bundl
 - **Eyes that follow you.** Both irises track the pointer anywhere on the page:
   - **Saccades:** fast jumps of 30–75 ms instead of smooth gliding.
   - **Micro-saccades:** tiny drifts while she holds her gaze on a point.
-  - **Idle glances:** brief looks away when you stop moving.
-  - **Rest:** her gaze returns to you when the cursor leaves the window.
+  - **Losing interest:** if the cursor stays still for 3 seconds, or leaves the window, she settles back into her default face. Her eyes return to you, her head straightens and any smirk fades, with only the occasional glance away. She picks the cursor up again as soon as it moves.
 - **Natural blinking.** A blink every 2.5–7 seconds, sometimes a double blink, and often one during a large eye movement, as people do. The lid closes in 75 ms and opens in 150 ms; that asymmetry is what makes a blink read as real.
 - **True to the artwork.** The eye openings are traced exactly to the lower edge of her eyeliner, so the liner, wing and heavy-lidded look of the illustration are untouched. Only the iris moves and only the lid closes.
+- **She reacts.** Hovering over or focusing the hero's "Email Omozusi" link earns a knowing smirk: one lip corner curls up into a dimple, the cheek lifts and her lower lids rise. Clicking it gives a fuller smile before the email opens.
 - **Subtle life everywhere else.** The head turns toward the viewer and her curls move in the wind; segmentation masks keep her face, glasses and headband rigid. The earring swings from its own pivot, and the whole figure breathes.
 - **Editorial design.** An espresso, clay, cream and gold palette taken from the artwork. A high-contrast display serif with a warm text serif, and section headings that stay in view while their content scrolls.
 - **No dependencies.** Two Google Fonts and nothing else at runtime.
@@ -61,6 +61,7 @@ Add `?debug` to the URL (`http://127.0.0.1:5173/?debug`) to expose the portrait 
 ```js
 portrait.blink();                                      // blink now
 portrait.forced = { gaze: { x: -7.5, y: 0 }, blink: 0 }; // pin the gaze (source px) and lid (0–1)
+portrait.setMood("smirk", 1);                          // or "smile"; 0 to relax
 portrait.forced = null;                                // back to normal behaviour
 ```
 
@@ -116,8 +117,10 @@ The pipeline runs once, offline, and produces the three files in `assets/portrai
 A single full-screen fragment shader draws the portrait. For each pixel on screen it works backwards through every motion to find which pixel of the art belongs there:
 
 ```
-breath  →  head turn  →  earring swing  →  hair wind  →  blink  →  sample the art
+breath  →  head turn  →  earring swing  →  smile  →  hair wind  →  blink  →  sample the art
 ```
+
+- **Smile** lifts each lip corner (and, more broadly, the cheek above it) along the line of her mouth, with a small dimple where the corner tucks in. The lip corners are marked in `tools/landmarks.json` under `mouth`.
 
 - **Hair wind** is a layered noise field: a slow flow plus faster flutter during gusts. It is inverted by fixed-point iteration, so curls move without tearing.
 - **Blink:** the dark lash band slides down unchanged; behind it, flat lid planes are painted in her own lid colour, and the eye is squeezed into the shrinking gap.
@@ -133,8 +136,7 @@ Two small controllers run on the CPU each frame:
 - **`Gaze`** converts the pointer position into an iris offset and moves the eyes the way real eyes move:
   - Saccades, with fixations between them
   - Micro-saccades every 0.5–1.3 s
-  - Idle glances away after 4 s without movement
-  - A return to the viewer when there is no pointer
+  - A return to the viewer, with occasional glances away, when there is no pointer or it has been still for 3 s
 - **The blink scheduler** handles random intervals, double blinks, and blinks triggered by large saccades.
 
 The engine renders only while the hero is on screen and the tab is visible, and caps pixel density at 2×.
@@ -156,7 +158,8 @@ All in `js/portrait-gl.js`:
 | How far the irises travel | `step()` → `Math.tanh(...) * 7.5` (sideways), `* 3.2` (up/down) | ±7.5 / ±3.2 source px |
 | How far away the cursor must be to reach full travel | `step()` → `/ 230` | 230 source px |
 | Saccade speed | `Gaze.update()` → `0.025 + dist * 0.0035` | ~30 ms short, ~75 ms across the eye |
-| Idle before glancing away | `Gaze.update()` → `idleFor > 4` | 4 s |
+| Still cursor before she returns to her default face | `IDLE_AFTER` at the top of the file | 3 s |
+| Glances while at rest | `Gaze.update()` → `nextGlance = t + rand(2.5, 6)` | every 2.5–6 s |
 | Glance size and duration | `Gaze.update()` → `rand(3.5, 7.5)`, `rand(0.8, 1.7)` | — |
 | Blink interval | `step()` → `rand(2.5, 7)` | 2.5–7 s |
 | Chance of a double blink | `step()` → `Math.random() < 0.2` | 20% |
@@ -164,6 +167,9 @@ All in `js/portrait-gl.js`:
 | Hair movement | `render()` → `uHair` | `1.8 + 2.6 × gust` px |
 | Head turn toward the cursor | `render()` → `this.look.x * 1.3 * deg` | up to 1.3° |
 | Breathing | `render()` → `uBreath` | 0.5% over 4.6 s |
+| Smirk and smile strength | `render()` → `uLift` | smirk: 6.8 / 1.5 px; smile: 6.2 / 5.6 px (image-left / image-right corner) |
+| Expression speed | `step()` → `rate = target > ... ? 9 : 5` | ~0.25 s in, ~0.5 s out |
+| How long the click smile lasts | `js/main.js` → `setTimeout(..., 1600)` | 1.6 s |
 
 ## Editing the content
 

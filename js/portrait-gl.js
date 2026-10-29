@@ -23,6 +23,9 @@ uniform vec3 uSclera[2], uIrisCol[2], uLid[2], uLashCol[2];
 uniform vec2 uGaze;                     // iris offset, source px
 uniform float uBlink[2];
 uniform float uArtLod;                  // mip level matching the on-screen scale
+uniform vec2 uMouth[2];                 // lip corners, source px (image-left, image-right)
+uniform vec2 uLift;                     // how far each corner rises, source px
+uniform float uWiden, uSquint;          // smile width; lower lids rising with the cheeks
 out vec4 outColor;
 
 mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
@@ -47,6 +50,38 @@ vec2 hairField(vec2 p) {
   float c = noise(p * 0.05 + vec2(t * 1.4, -t * 0.9));
   vec2 flow = vec2(a * 0.8 + 0.3 * uGust, b * 0.5);
   return (flow + vec2(c, c * 0.6) * 0.3 * (0.4 + uGust)) * uHair;
+}
+
+// Smile: each lip corner rises and draws outward, and the cheek above it lifts with it.
+// Returns how far the art at p moves; inverted below by fixed-point iteration.
+vec2 smileDisp(vec2 p) {
+  vec2 axis = normalize(uMouth[1] - uMouth[0]);
+  vec2 up = vec2(axis.y, -axis.x);
+  vec2 d = vec2(0);
+  for (int i = 0; i < 2; i++) {
+    vec2 c = uMouth[i];
+    vec2 outward = i == 0 ? -axis : axis;
+    float lift = i == 0 ? uLift.x : uLift.y;
+    vec2 pc = p - c;
+    d += (up * lift + outward * uWiden * lift * 0.35) * exp(-dot(pc, pc) / (2.0 * 13.0 * 13.0));
+    vec2 ck = p - (c + outward * 6.0 + up * 24.0);
+    d += up * lift * 0.45 * exp(-dot(ck, ck) / (2.0 * 24.0 * 24.0));
+  }
+  return d;
+}
+
+// A small dimple where each raised corner tucks into the cheek.
+float dimple(vec2 p) {
+  vec2 axis = normalize(uMouth[1] - uMouth[0]);
+  vec2 up = vec2(axis.y, -axis.x);
+  float shade = 1.0;
+  for (int i = 0; i < 2; i++) {
+    float lift = i == 0 ? uLift.x : uLift.y;
+    vec2 outward = i == 0 ? -axis : axis;
+    vec2 dc = p - (uMouth[i] + up * lift * 0.8 + outward * 4.5);
+    shade -= 0.16 * clamp(lift / 6.0, 0.0, 1.0) * exp(-dot(dc, dc) / (2.0 * 2.8 * 2.8));
+  }
+  return shade;
 }
 
 vec4 eyeCurve(int e, float t) {
@@ -118,10 +153,11 @@ float blink(int e, vec2 q, inout float eyeA, inout vec3 eyeCol) {
   vec4 c = eyeCurve(e, t);
   float lidTop = c.x, lashTop = c.y, top = c.z, bot = c.w;
   if (q.y < lidTop || q.y > bot + 3.0) return q.y;
-  float k = uBlink[e];
+  // A smile pushes the cheeks up: the lower lid rises and the upper lid settles a touch.
+  float k = max(uBlink[e], uSquint * 0.12);
   float L = top - lashTop;
   float top2 = top + k * (bot - top - 0.6);
-  float bot2 = bot - k * 0.9;
+  float bot2 = bot - k * 0.9 - uSquint * 1.3;
   float sy;
   if (q.y < lashTop) {
     return q.y;
@@ -168,6 +204,15 @@ void main() {
   w = W(p);
   p = uEar + rot(-uEarRot * w.a) * (p - uEar);
 
+  // smile: same inversion; skipped entirely while her face is at rest
+  float shade = 1.0;
+  if (uLift.x + uLift.y > 0.01) {
+    vec2 m = p;
+    for (int k = 0; k < 3; k++) m = p - smileDisp(m);
+    shade = dimple(p);
+    p = m;
+  }
+
   // hair: invert the wind displacement by fixed-point iteration
   vec2 q = p;
   for (int k = 0; k < 2; k++) q = p - hairField(q) * W(q).r;
@@ -181,12 +226,14 @@ void main() {
   vec4 art = textureLod(uArt, uv, uArtLod);
   // Past the art's edges there is nothing to stretch: stay transparent.
   art *= step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
-  vec3 col = mix(art.rgb, eyeCol, eyeA);
+  vec3 col = mix(art.rgb, eyeCol, eyeA) * shade;
   float a = art.a;
   // The jacket fades into the background along the bottom edge.
   a *= 1.0 - smoothstep(0.8, 1.0, uv0.y);
   outColor = vec4(col * a, a);
 }`;
+
+const IDLE_AFTER = 3; // seconds without pointer movement before she returns to her default face
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -207,11 +254,12 @@ class Gaze {
     this.nextGlance = 5;
   }
 
-  // target: desired offset in source px (or null when no pointer). Returns true on a big jump.
-  update(t, target, idleFor) {
+  // target: desired offset in source px, or null when there's no (moving) pointer.
+  // Returns true on a big jump.
+  update(t, target) {
     let want = target;
-    if (!target || idleFor > 4) {
-      // Nobody moving: hold on the last point (or the viewer), glancing away now and then.
+    if (!target) {
+      // Nobody there (or nobody moving): rest on the viewer, glancing away now and then.
       if (!this.glance && t > this.nextGlance) {
         const side = Math.random() < 0.5 ? -1 : 1;
         this.glance = { x: side * rand(3.5, 7.5), y: rand(-2, 2.2), until: t + rand(0.8, 1.7) };
@@ -220,7 +268,7 @@ class Gaze {
         this.glance = null;
         this.nextGlance = t + rand(2.5, 6);
       }
-      want = this.glance || target || { x: 0, y: 0 };
+      want = this.glance || { x: 0, y: 0 };
     } else {
       this.glance = null;
       this.nextGlance = t + rand(3, 6);
@@ -268,7 +316,9 @@ export class Portrait {
     this.nextBlink = 1.6;
     this.gust = 0;
     this.frozen = null;
-    this.forced = null;          // debug: { gaze: {x,y}, blink: k }
+    this.forced = null;          // debug: { gaze: {x,y}, blink: k, smirk, smile }
+    this.mood = { smirk: 0, smile: 0 };
+    this.moodTarget = { smirk: 0, smile: 0 };
     this.running = false;
     this.t0 = performance.now();
   }
@@ -316,7 +366,8 @@ export class Portrait {
     const U = (n) => gl.getUniformLocation(this.program, n);
     this.u = {};
     for (const n of ["uRes", "uRect", "uSize", "uTime", "uHeadRot", "uBreath", "uEarRot", "uHair", "uGust",
-      "uHeadShift", "uNeck", "uEar", "uEyeX", "uEye", "uIris", "uSclera", "uIrisCol", "uLid", "uLashCol", "uGaze", "uBlink", "uArtLod"]) {
+      "uHeadShift", "uNeck", "uEar", "uEyeX", "uEye", "uIris", "uSclera", "uIrisCol", "uLid", "uLashCol", "uGaze", "uBlink", "uArtLod",
+      "uMouth", "uLift", "uWiden", "uSquint"]) {
       this.u[n] = U(n);
     }
     const [w, h] = this.size;
@@ -332,6 +383,7 @@ export class Portrait {
     gl.uniform3fv(this.u.uIrisCol, meta.eyes.flatMap((e) => e.irisColor));
     gl.uniform3fv(this.u.uLid, meta.eyes.flatMap((e) => e.lidColor));
     gl.uniform3fv(this.u.uLashCol, meta.eyes.flatMap((e) => e.lashColor));
+    gl.uniform2fv(this.u.uMouth, meta.mouth.corners.flat());
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     tick();
@@ -384,6 +436,12 @@ export class Portrait {
   }
 
   blink(at = this.now()) { this.blinks.push(at); }
+
+  // Expressions: "smirk" (one corner, knowing) and "smile" (both corners, warmer). 0–1.
+  setMood(name, amount) {
+    this.moodTarget[name] = amount;
+    if (!this.running) this.render(this.now());
+  }
   now() { return (performance.now() - this.t0) / 1000; }
 
   start() {
@@ -424,18 +482,30 @@ export class Portrait {
     const swell = 0.5 + 0.5 * Math.sin(t * 0.21) * Math.sin(t * 0.67 + 2.1);
     this.gust = Math.min(1, swell * 0.8);
 
+    // A pointer that hasn't moved for a while counts as no pointer: she loses interest
+    // and settles back into her default face until it moves again.
+    const idle = !this.pointer || t - this.lastMove > IDLE_AFTER;
+
     // Gaze target: direction from between her eyes to the pointer, eased so far-away
     // pointers saturate instead of pushing the iris out of the eye.
     let target = null;
     const p = this.pointer;
-    if (p) {
+    if (!idle) {
       const [mx, my] = this.meta.eyeMid;
       target = { x: Math.tanh((p.x - mx) / 230) * 7.5, y: Math.tanh((p.y - my) / 230) * 3.2 };
     }
-    const bigJump = this.gaze.update(t, target, t - this.lastMove);
+    const bigJump = this.gaze.update(t, target);
     if (bigJump && Math.random() < 0.35 && t - (this.blinks.at(-1) ?? -9) > 1) {
       this.blink(t + 0.01);
       this.nextBlink = Math.max(this.nextBlink, t + 2.5);
+    }
+
+    // Expressions arrive quickly (~0.25 s) and leave a little slower (~0.5 s).
+    // A smirk fades with interest; a click's smile always plays out.
+    for (const k of ["smirk", "smile"]) {
+      const target = k === "smirk" && idle ? 0 : this.moodTarget[k];
+      const rate = target > this.mood[k] ? 9 : 5;
+      this.mood[k] = lerp(this.mood[k], target, 1 - Math.exp(-dt * rate));
     }
 
     // The head follows the eyes, slowly.
@@ -447,7 +517,7 @@ export class Portrait {
 
   render(t) {
     const gl = this.gl;
-    if (!gl) return;
+    if (!gl || !this.u) return; // still loading (e.g. the email link hovered early)
     if (this.frozen != null) t = this.frozen;
     const u = this.u;
     const deg = Math.PI / 180;
@@ -467,6 +537,15 @@ export class Portrait {
     gl.uniform2f(u.uGaze, gaze.x, gaze.y);
     gl.uniform1fv(u.uBlink, [blink, blink]);
     gl.uniform1f(u.uArtLod, Math.max(0, Math.log2(this.textures[1].width / this.rect[2])));
+    // The smirk lifts the corner nearer the viewer (image-left) far more than the other;
+    // the smile lifts both. Blend whichever is stronger.
+    const smirk = this.forced?.smirk ?? this.mood.smirk;
+    const smile = this.forced?.smile ?? this.mood.smile;
+    const ease = (v) => v * v * (3 - 2 * v);
+    const sk = ease(Math.min(1, smirk)), sm = ease(Math.min(1, smile));
+    gl.uniform2f(u.uLift, Math.max(sk * 6.8, sm * 6.2), Math.max(sk * 1.5, sm * 5.6));
+    gl.uniform1f(u.uWiden, Math.max(sk * 0.5, sm * 1.0));
+    gl.uniform1f(u.uSquint, Math.max(sk * 0.55, sm * 1.0));
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 3);

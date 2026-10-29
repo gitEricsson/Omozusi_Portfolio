@@ -118,6 +118,20 @@ addEventListener("pointerup", (e) => {
 // The cursor left the window: she looks back at you.
 addEventListener("mouseout", (e) => { if (!e.relatedTarget) portrait.setPointer(null); });
 
+// The email link: hovering (or focusing) it earns a knowing smirk; clicking it, a proper smile.
+const mail = $(".hero__mail");
+let smileT;
+const smirk = (on) => portrait.setMood("smirk", on ? 1 : 0);
+mail.addEventListener("pointerenter", () => smirk(true));
+mail.addEventListener("pointerleave", () => smirk(false));
+mail.addEventListener("focus", () => smirk(true));
+mail.addEventListener("blur", () => smirk(false));
+mail.addEventListener("click", () => {
+  portrait.setMood("smile", 1);
+  clearTimeout(smileT);
+  smileT = setTimeout(() => portrait.setMood("smile", 0), 1600);
+});
+
 new IntersectionObserver(([e]) => {
   heroVisible = e.isIntersecting;
   if (!live) return;
