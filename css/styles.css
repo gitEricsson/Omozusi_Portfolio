@@ -76,7 +76,17 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   margin: 0; font-family: var(--display); font-weight: 400;
   font-size: var(--name-size, 110px); line-height: 0.94; letter-spacing: -0.02em; color: var(--cream);
 }
-.hero__name span { display: block; width: max-content; white-space: nowrap; }
+.hero__text > span { display: block; width: max-content; white-space: nowrap; }
+.ink { display: block; }
+/* With JS the name is drawn by pen on the canvas; the text stays for screen readers and search. */
+.js .hero__name:not(.ink-failed) .hero__text {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.hero__name:not(.has-ink) .ink { display: none; }
+.js .hero__line, .js .hero__mail { opacity: 0; transition: opacity .9s var(--ease), transform .9s var(--ease); }
+.js .hero__line { transform: translateY(8px); }
+.js .hero__lockup.is-written .hero__line, .js .hero__lockup.is-written .hero__mail { opacity: 1; transform: none; }
+.js .hero__lockup.is-written .hero__mail { transition-delay: .15s; }
 .hero__line { margin: 0.9em 0 0.5em; font-size: 19px; color: var(--cream-soft); font-style: italic; }
 .hero__mail { position: relative; z-index: 3; color: var(--gold); text-decoration: none; border-bottom: 1px solid rgba(210, 169, 99, 0.4); padding-bottom: 2px; transition: border-color .25s; }
 .hero__mail:hover { border-color: var(--gold); }
@@ -163,6 +173,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .contact__email:hover { color: var(--gold); border-color: var(--gold); }
 .contact__status { min-height: 1.5em; margin: 10px 0 18px; color: var(--gold); font-size: 16px; }
 .contact__send { color: var(--gold); text-decoration: none; border-bottom: 1px solid rgba(210, 169, 99, 0.35); }
+.signoff { display: flex; justify-content: center; margin-top: clamp(48px, 7vw, 88px); }
 
 .foot {
   display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 24px;
@@ -185,7 +196,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   body { font-size: 18px; }
   .nav nav { display: none; }
   .hero__lockup { left: var(--gutter); right: var(--gutter); text-align: center; z-index: 2; }
-  .hero__name span { margin-inline: auto; }
+  .hero__text > span { margin-inline: auto; }
   .hero__line { font-size: 17px; margin: 0.6em 0 0; }
   .role { grid-template-columns: 1fr; gap: 6px; }
 }
@@ -193,5 +204,5 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .js [data-reveal] { opacity: 1; transform: none; transition: none; }
-  .hero.is-placed .hero__lockup { transition: none; }
+  .hero.is-placed .hero__lockup, .js .hero__line, .js .hero__mail { transition: none; }
 }

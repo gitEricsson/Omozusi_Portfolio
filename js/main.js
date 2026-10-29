@@ -1,4 +1,5 @@
 import { Portrait } from "./portrait-gl.js";
+import { Ink, loadLettering } from "./ink.js";
 
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const debug = new URLSearchParams(location.search).has("debug");
@@ -15,6 +16,8 @@ const lockup = $(".hero__lockup");
 const nameEl = $(".hero__name");
 const portrait = new Portrait(canvas);
 let live = false;
+let nameInk = null;      // her name, written by pen once the lettering data arrives
+const GLOOCK_PER_PX = 4.17; // width of "Omozusi" per px of font size (with -0.02em tracking), until then
 
 // Fallback numbers until meta.json arrives (they match the shipped art).
 let meta = { size: [862, 713], eyeMid: [483, 298.5], hairAtEyes: [85, 693] };
@@ -30,11 +33,11 @@ function layout() {
   const aspect = sw / sh;
   const mobile = W < 641;
   const gutter = parseFloat(getComputedStyle(document.body).getPropertyValue("--gutter")) || 24;
-  const setSize = (s) => hero.style.setProperty("--name-size", `${s}px`);
-
-  // Measure the longer word at 100px.
-  setSize(100);
-  const perPx = Math.max(...[...nameEl.children].map((s) => s.offsetWidth)) / 100;
+  const setSize = (s) => {
+    hero.style.setProperty("--name-size", `${s}px`);
+    if (nameInk) { nameInk.align = mobile ? "center" : "left"; nameInk.layout(s); }
+  };
+  const perPx = nameInk ? nameInk.widthPerPx : GLOOCK_PER_PX;
   let rect;
 
   if (mobile) {
@@ -58,7 +61,7 @@ function layout() {
     rect = [W * 0.62 - imgW * 0.53, H - imgH, imgW, imgH];
     const hairL = rect[0] + (meta.hairAtEyes[0] / sw) * imgW;
     const eyeY = rect[1] + (meta.eyeMid[1] / sh) * imgH;
-    const tuck = imgW * 0.025; // the longer word slides just under her outer curls
+    const tuck = imgW * 0.006; // the longer word just kisses her outer curls
     setSize(Math.min((hairL - gutter + tuck) / perPx, H * 0.17, 210));
     const top = Math.max(96, eyeY - nameEl.offsetHeight * 0.55);
     Object.assign(lockup.style, { top: `${top}px`, width: `${hairL - gutter + tuck}px` });
@@ -76,7 +79,25 @@ still.hidden = false;
 document.fonts.ready.then(layout);
 layout();
 let resizeT;
-addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(layout, 100); });
+addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => { layout(); sizeSignature(); }, 100); });
+
+// ---------- her name, written by hand ----------
+// The tagline and email link arrive as the pen finishes.
+loadLettering("name").then((data) => {
+  nameInk = new Ink($(".hero__name .ink"), data, { lineHeight: 0.94, tracking: -0.02 });
+  nameEl.classList.add("has-ink");
+  layout();
+  if (reduced) {
+    nameInk.show();
+    lockup.classList.add("is-written");
+    return;
+  }
+  nameInk.write({ duration: 3.4, delay: 0.4, onProgress: (k) => { if (k > 0.8) lockup.classList.add("is-written"); } });
+}).catch((e) => {
+  console.warn("Name stays as text:", e.message);
+  nameEl.classList.add("ink-failed");
+  lockup.classList.add("is-written");
+});
 
 // ---------- the living portrait ----------
 if (!reduced) {
@@ -166,6 +187,25 @@ const io = new IntersectionObserver((entries) => entries.forEach((e) => {
 }), { rootMargin: "0px 0px -10% 0px" });
 $$("[data-reveal]").forEach((el) => io.observe(el));
 
+// ---------- signature: she signs off at the end of Contact ----------
+let sigInk = null;
+function sizeSignature() {
+  if (!sigInk) return;
+  const gutter = parseFloat(getComputedStyle(document.body).getPropertyValue("--gutter")) || 24;
+  const room = (Math.min(innerWidth, 1320) - gutter * 2) * 0.9;
+  sigInk.layout(Math.min(110, room / sigInk.widthPerPx));
+}
+loadLettering("signature").then((data) => {
+  sigInk = new Ink($(".signoff .ink"), data, { color: "#d2a963", nib: "#f6e6c8", align: "center" });
+  sizeSignature();
+  if (reduced) return sigInk.show();
+  new IntersectionObserver(([e], obs) => {
+    if (!e.isIntersecting) return;
+    obs.disconnect();
+    sigInk.write({ duration: 3.8, delay: 0.25 });
+  }, { threshold: 0.7 }).observe($(".signoff"));
+}).catch(() => {});
+
 // ---------- contact ----------
 const copyBtn = $("[data-copy]");
 const status = $(".contact__status");
@@ -181,4 +221,4 @@ copyBtn.addEventListener("click", async () => {
   copyBtn._t = setTimeout(() => (status.textContent = ""), 2600);
 });
 
-if (debug) Object.assign(window, { portrait, layout });
+if (debug) Object.assign(window, { portrait, layout, ink: () => ({ nameInk, sigInk }) });
