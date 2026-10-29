@@ -16,6 +16,7 @@ uniform vec4 uRect;         // image placement in canvas px (x, y, w, h), y down
 uniform vec2 uSize;         // source image px
 uniform float uTime, uHeadRot, uBreath, uEarRot, uHair, uGust;
 uniform vec2 uHeadShift, uNeck, uEar;   // source px
+uniform vec2 uTurn, uFaceC;             // turn offset at the face centre, and that centre (source px)
 uniform vec4 uEyeX;                     // x0, x1 for eye 0, then eye 1
 uniform vec4 uEye[64];                  // per eye 32 columns of (lid top, lash top, opening top, opening bottom)
 uniform vec3 uIris[2];                  // centre x, y, radius
@@ -63,9 +64,10 @@ vec2 smileDisp(vec2 p) {
     vec2 outward = i == 0 ? -axis : axis;
     float lift = i == 0 ? uLift.x : uLift.y;
     vec2 pc = p - c;
-    d += (up * lift + outward * uWiden * lift * 0.35) * exp(-dot(pc, pc) / (2.0 * 13.0 * 13.0));
+    // A wider falloff than the lift itself, so stronger smiles bend the lips instead of pinching them.
+    d += (up * lift + outward * uWiden * lift * 0.35) * exp(-dot(pc, pc) / (2.0 * 15.0 * 15.0));
     vec2 ck = p - (c + outward * 6.0 + up * 24.0);
-    d += up * lift * 0.45 * exp(-dot(ck, ck) / (2.0 * 24.0 * 24.0));
+    d += up * lift * 0.55 * exp(-dot(ck, ck) / (2.0 * 26.0 * 26.0));
   }
   return d;
 }
@@ -79,7 +81,7 @@ float dimple(vec2 p) {
     float lift = i == 0 ? uLift.x : uLift.y;
     vec2 outward = i == 0 ? -axis : axis;
     vec2 dc = p - (uMouth[i] + up * lift * 0.8 + outward * 4.5);
-    shade -= 0.16 * clamp(lift / 6.0, 0.0, 1.0) * exp(-dot(dc, dc) / (2.0 * 2.8 * 2.8));
+    shade -= 0.2 * clamp(lift / 7.0, 0.0, 1.0) * exp(-dot(dc, dc) / (2.0 * 3.0 * 3.0));
   }
   return shade;
 }
@@ -196,9 +198,14 @@ void main() {
   vec4 w = W(p);
   p.y = uSize.y + (p.y - uSize.y) / (1.0 + uBreath * w.b);
 
-  // head: turn about the neck toward the viewer's cursor
+  // head: a small drift and the faintest tilt about the neck
   w = W(p);
   p = uNeck + rot(-uHeadRot * w.g) * (p - uNeck - uHeadShift * w.g);
+
+  // turn: the middle of her face moves a little further than her outline and hair,
+  // which reads as the head turning in depth instead of bending like a toy
+  vec2 fc = (p - uFaceC) * vec2(1.0, 0.8);
+  p -= uTurn * w.g * exp(-dot(fc, fc) / (2.0 * 95.0 * 95.0));
 
   // earring swings from the lobe
   w = W(p);
@@ -366,7 +373,7 @@ export class Portrait {
     const U = (n) => gl.getUniformLocation(this.program, n);
     this.u = {};
     for (const n of ["uRes", "uRect", "uSize", "uTime", "uHeadRot", "uBreath", "uEarRot", "uHair", "uGust",
-      "uHeadShift", "uNeck", "uEar", "uEyeX", "uEye", "uIris", "uSclera", "uIrisCol", "uLid", "uLashCol", "uGaze", "uBlink", "uArtLod",
+      "uHeadShift", "uTurn", "uFaceC", "uNeck", "uEar", "uEyeX", "uEye", "uIris", "uSclera", "uIrisCol", "uLid", "uLashCol", "uGaze", "uBlink", "uArtLod",
       "uMouth", "uLift", "uWiden", "uSquint"]) {
       this.u[n] = U(n);
     }
@@ -384,6 +391,9 @@ export class Portrait {
     gl.uniform3fv(this.u.uLid, meta.eyes.flatMap((e) => e.lidColor));
     gl.uniform3fv(this.u.uLashCol, meta.eyes.flatMap((e) => e.lashColor));
     gl.uniform2fv(this.u.uMouth, meta.mouth.corners.flat());
+    // Face centre: halfway between her eyes and the middle of her mouth (around the nose).
+    const [[ax, ay], [bx, by]] = meta.mouth.corners;
+    gl.uniform2f(this.u.uFaceC, (meta.eyeMid[0] + (ax + bx) / 2) / 2, (meta.eyeMid[1] + (ay + by) / 2) / 2);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     tick();
@@ -521,7 +531,8 @@ export class Portrait {
     if (this.frozen != null) t = this.frozen;
     const u = this.u;
     const deg = Math.PI / 180;
-    const headRot = 0.5 * deg * (0.6 * Math.sin(t * 0.31) + 0.4 * Math.sin(t * 0.53 + 1.3)) + this.look.x * 1.3 * deg;
+    // Heads turn, they don't wobble: keep the tilt tiny and let the turn (below) carry the look.
+    const headRot = 0.15 * deg * (0.6 * Math.sin(t * 0.31) + 0.4 * Math.sin(t * 0.53 + 1.3)) + this.look.x * 0.25 * deg;
     const ear = 0.045 * Math.sin(t * 3.1) * (0.35 + 0.65 * this.gust) + 0.02 * Math.sin(t * 1.1) - headRot * 1.6;
     const gaze = this.forced?.gaze ?? this.gaze.cur;
     const blink = this.forced?.blink ?? this.#blinkValue(t);
@@ -529,7 +540,8 @@ export class Portrait {
     gl.uniform4f(u.uRect, ...this.rect);
     gl.uniform1f(u.uTime, t);
     gl.uniform1f(u.uHeadRot, headRot);
-    gl.uniform2f(u.uHeadShift, this.look.x * 2.6 + Math.sin(t * 0.4) * 0.5, this.look.y * 1.4 + Math.sin(t * 0.29) * 0.4);
+    gl.uniform2f(u.uHeadShift, this.look.x * 0.9 + Math.sin(t * 0.4) * 0.3, this.look.y * 0.6 + Math.sin(t * 0.29) * 0.25);
+    gl.uniform2f(u.uTurn, this.look.x * 2.2, this.look.y * 1.0);
     gl.uniform1f(u.uBreath, 0.005 * Math.sin((t / 4.6) * Math.PI * 2));
     gl.uniform1f(u.uEarRot, ear);
     gl.uniform1f(u.uHair, 1.8 + 2.6 * this.gust);
@@ -543,8 +555,8 @@ export class Portrait {
     const smile = this.forced?.smile ?? this.mood.smile;
     const ease = (v) => v * v * (3 - 2 * v);
     const sk = ease(Math.min(1, smirk)), sm = ease(Math.min(1, smile));
-    gl.uniform2f(u.uLift, Math.max(sk * 6.8, sm * 6.2), Math.max(sk * 1.5, sm * 5.6));
-    gl.uniform1f(u.uWiden, Math.max(sk * 0.5, sm * 1.0));
+    gl.uniform2f(u.uLift, Math.max(sk * 8.6, sm * 9.0), Math.max(sk * 2.0, sm * 8.2));
+    gl.uniform1f(u.uWiden, Math.max(sk * 0.6, sm * 1.4));
     gl.uniform1f(u.uSquint, Math.max(sk * 0.55, sm * 1.0));
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);

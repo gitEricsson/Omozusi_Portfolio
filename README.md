@@ -34,7 +34,7 @@ It is a static site: plain HTML, CSS and JavaScript, with no framework, no bundl
 - **Natural blinking.** A blink every 2.5–7 seconds, sometimes a double blink, and often one during a large eye movement, as people do. The lid closes in 75 ms and opens in 150 ms; that asymmetry is what makes a blink read as real.
 - **True to the artwork.** The eye openings are traced exactly to the lower edge of her eyeliner, so the liner, wing and heavy-lidded look of the illustration are untouched. Only the iris moves and only the lid closes.
 - **She reacts.** Hovering over or focusing the hero's "Email Omozusi" link earns a knowing smirk: one lip corner curls up into a dimple, the cheek lifts and her lower lids rise. Clicking it gives a fuller smile before the email opens.
-- **Subtle life everywhere else.** The head turns toward the viewer and her curls move in the wind; segmentation masks keep her face, glasses and headband rigid. The earring swings from its own pivot, and the whole figure breathes.
+- **Subtle life everywhere else.** Her head turns toward the viewer: the middle of her face moves slightly further than her outline, so it reads as a turn in depth rather than a tilt. Her curls move in the wind; segmentation masks keep her face, glasses and headband rigid. The earring swings from its own pivot, and the whole figure breathes.
 - **Editorial design.** An espresso, clay, cream and gold palette taken from the artwork. A high-contrast display serif with a warm text serif, and section headings that stay in view while their content scrolls.
 - **No dependencies.** Two Google Fonts and nothing else at runtime.
 
@@ -165,7 +165,8 @@ All in `js/portrait-gl.js`:
 | Chance of a double blink | `step()` → `Math.random() < 0.2` | 20% |
 | Blink shape | `#blinkValue()` | 75 ms close, 30 ms hold, 150 ms open |
 | Hair movement | `render()` → `uHair` | `1.8 + 2.6 × gust` px |
-| Head turn toward the cursor | `render()` → `this.look.x * 1.3 * deg` | up to 1.3° |
+| Head turn toward the cursor | `render()` → `uTurn` | the middle of her face moves up to 2.2 px further than her outline |
+| Head drift and tilt | `render()` → `uHeadShift`, `headRot` | up to 0.9 px drift, 0.25° tilt (kept tiny so it never wobbles) |
 | Breathing | `render()` → `uBreath` | 0.5% over 4.6 s |
 | Smirk and smile strength | `render()` → `uLift` | smirk: 6.8 / 1.5 px; smile: 6.2 / 5.6 px (image-left / image-right corner) |
 | Expression speed | `step()` → `rate = target > ... ? 9 : 5` | ~0.25 s in, ~0.5 s out |
