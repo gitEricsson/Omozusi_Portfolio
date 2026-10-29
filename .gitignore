@@ -1,0 +1,12 @@
+# Local tooling
+.claude/
+tools/debug/
+__pycache__/
+
+# Private source material, not used by the site
+tools/source.png
+ART-BRIEF.md
+
+# OS files
+.DS_Store
+Thumbs.db

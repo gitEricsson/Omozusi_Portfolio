@@ -1,0 +1,170 @@
+import { Portrait } from "./portrait-gl.js";
+
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const debug = new URLSearchParams(location.search).has("debug");
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+
+document.documentElement.classList.add("js");
+
+const hero = $(".hero");
+const layer = $(".hero__portrait");
+const canvas = $(".portrait");
+const still = $(".portrait-still");
+const lockup = $(".hero__lockup");
+const nameEl = $(".hero__name");
+const portrait = new Portrait(canvas);
+let live = false;
+
+// Fallback numbers until meta.json arrives (they match the shipped art).
+let meta = { size: [862, 713], eyeMid: [483, 298.5], hairAtEyes: [85, 693] };
+
+// ---------- layout ----------
+// Desktop: she stands on the bottom edge right of centre; her name fills the space left of her curls.
+// Phone: her name sits on top; she fills the rest of the screen below it.
+const HEADBAND_TOP = 40; // source px from the top of the art to the top of her headband
+
+function layout() {
+  const W = hero.clientWidth, H = hero.clientHeight;
+  const [sw, sh] = meta.size;
+  const aspect = sw / sh;
+  const mobile = W < 641;
+  const gutter = parseFloat(getComputedStyle(document.body).getPropertyValue("--gutter")) || 24;
+  const setSize = (s) => hero.style.setProperty("--name-size", `${s}px`);
+
+  // Measure the longer word at 100px.
+  setSize(100);
+  const perPx = Math.max(...[...nameEl.children].map((s) => s.offsetWidth)) / 100;
+  let rect;
+
+  if (mobile) {
+    const top = 76;
+    let size = Math.min((W - gutter * 2) / perPx, W * 0.24);
+    setSize(size);
+    Object.assign(lockup.style, { top: `${top}px`, width: "" });
+    const below = top + lockup.offsetHeight + 14;
+    let imgW = Math.min(Math.max(((H - below) / (1 - HEADBAND_TOP / sh)) * aspect, W * 1.1), W * 1.6);
+    const imgH = imgW / aspect;
+    // 0.53: the middle of her face sits a little right of the image centre.
+    rect = [W * 0.5 - imgW * 0.53, H - imgH, imgW, imgH];
+    const headTop = rect[1] + (HEADBAND_TOP / sh) * imgH;
+    if (headTop < below) {
+      size *= Math.max(0.7, (headTop - 14 - top) / lockup.offsetHeight);
+      setSize(size);
+    }
+  } else {
+    const imgH = Math.min(H * 0.94, (W * 0.7) / aspect);
+    const imgW = imgH * aspect;
+    rect = [W * 0.62 - imgW * 0.53, H - imgH, imgW, imgH];
+    const hairL = rect[0] + (meta.hairAtEyes[0] / sw) * imgW;
+    const eyeY = rect[1] + (meta.eyeMid[1] / sh) * imgH;
+    const tuck = imgW * 0.025; // the longer word slides just under her outer curls
+    setSize(Math.min((hairL - gutter + tuck) / perPx, H * 0.17, 210));
+    const top = Math.max(96, eyeY - nameEl.offsetHeight * 0.55);
+    Object.assign(lockup.style, { top: `${top}px`, width: `${hairL - gutter + tuck}px` });
+  }
+
+  const [x, y, w, h] = rect;
+  Object.assign(still.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` });
+  if (live) portrait.layout(W, H, rect);
+  hero.style.setProperty("--gx", `${((x + (meta.eyeMid[0] / sw) * w) / W) * 100}%`);
+  hero.style.setProperty("--gy", `${((y + (meta.eyeMid[1] / sh) * h) / H) * 100}%`);
+  hero.classList.add("is-placed");
+}
+
+still.hidden = false;
+document.fonts.ready.then(layout);
+layout();
+let resizeT;
+addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(layout, 100); });
+
+// ---------- the living portrait ----------
+if (!reduced) {
+  const giveUp = new Promise((_, reject) => setTimeout(() => reject(new Error("took too long")), debug ? 90000 : 10000));
+  Promise.race([portrait.load(), giveUp]).then(() => {
+    meta = portrait.meta;
+    live = true;
+    layout();
+    portrait.start();
+    // Fade the live portrait in over the still, then drop the still. Keyed to the first frame
+    // actually drawn, so a tab that loads in the background keeps the still until it's shown.
+    canvas.style.opacity = "0";
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      canvas.style.transition = "opacity .6s ease-out";
+      canvas.style.opacity = "1";
+      setTimeout(() => (still.hidden = true), 650);
+    }));
+  }).catch((e) => {
+    console.warn("Portrait stays still:", e.message);
+    canvas.hidden = true;
+  });
+} else {
+  canvas.hidden = true;
+}
+
+// Her eyes follow the pointer anywhere on the page while she's on screen.
+let heroVisible = true;
+function aim(x, y) {
+  if (!live) return;
+  const r = canvas.getBoundingClientRect();
+  portrait.setPointer(x - r.left, y - r.top);
+}
+addEventListener("pointermove", (e) => { if (heroVisible) aim(e.clientX, e.clientY); }, { passive: true });
+addEventListener("pointerdown", (e) => aim(e.clientX, e.clientY), { passive: true });
+let touchT;
+addEventListener("pointerup", (e) => {
+  if (e.pointerType !== "mouse") { clearTimeout(touchT); touchT = setTimeout(() => portrait.setPointer(null), 1600); }
+});
+// The cursor left the window: she looks back at you.
+addEventListener("mouseout", (e) => { if (!e.relatedTarget) portrait.setPointer(null); });
+
+new IntersectionObserver(([e]) => {
+  heroVisible = e.isIntersecting;
+  if (!live) return;
+  heroVisible && !document.hidden ? portrait.start() : portrait.stop();
+}).observe(hero);
+document.addEventListener("visibilitychange", () => {
+  if (!live) return;
+  document.hidden || !heroVisible ? portrait.stop() : portrait.start();
+});
+
+// ---------- scrolling: the portrait recedes, the nav firms up ----------
+const nav = $(".nav");
+let lastY = 0, ticking = false;
+function onScroll() {
+  const y = scrollY, H = hero.clientHeight;
+  const k = Math.min(1, y / H);
+  if (!reduced) {
+    layer.style.transform = `translateY(${k * H * 0.18}px) scale(${1 - k * 0.04})`;
+    layer.style.opacity = String(1 - k * 0.75);
+    $(".hero__name").style.transform = `translateY(${k * H * 0.08}px)`;
+  }
+  nav.classList.toggle("is-solid", y > H * 0.85);
+  nav.classList.toggle("is-hidden", y > lastY && y > H);
+  lastY = y;
+  ticking = false;
+}
+addEventListener("scroll", () => { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
+
+// ---------- reveals ----------
+const io = new IntersectionObserver((entries) => entries.forEach((e) => {
+  if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+}), { rootMargin: "0px 0px -10% 0px" });
+$$("[data-reveal]").forEach((el) => io.observe(el));
+
+// ---------- contact ----------
+const copyBtn = $("[data-copy]");
+const status = $(".contact__status");
+copyBtn.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(copyBtn.dataset.copy);
+    status.textContent = "Copied to your clipboard.";
+  } catch {
+    getSelection().selectAllChildren(copyBtn);
+    status.textContent = "Selected. Press Ctrl+C to copy.";
+  }
+  clearTimeout(copyBtn._t);
+  copyBtn._t = setTimeout(() => (status.textContent = ""), 2600);
+});
+
+if (debug) Object.assign(window, { portrait, layout });
