@@ -158,7 +158,7 @@ The engine renders only while the hero is on screen and the tab is visible, and 
   - On desktop she stands on the bottom edge, right of centre. Her name is sized to the space left of her curls and set at eye level.
   - On phones her name sits on top and she fills the rest of the screen.
 - **Loading:** shows the still illustration immediately, swaps to the live portrait once its first frame is drawn, and falls back to the still if WebGL is unavailable or loading takes over 10 seconds.
-- **Scrolling:** the portrait recedes and dims, the nav gains a background past the hero and hides while scrolling down, and sections fade in.
+- **Scrolling:** the portrait recedes and dims, the nav gains a background past the hero and hides while scrolling down, and sections fade in. The nav's small copy of her name only appears once the big one has scrolled away, so it's never shown twice.
 
 ## How the handwriting works
 
@@ -232,7 +232,7 @@ All text lives in `index.html`, taken from her CV:
 
 | Section | Element | Notes |
 |---|---|---|
-| Hero | `.hero__lockup` | Name, one-line description, email link |
+| Hero | `.hero__lockup` | Name, title ("Writer"), email link |
 | About | `#about` | First-person summary and quick facts |
 | What I write | `#writing` | Four `<details>` panels; the first is open by default |
 | Published | `.published` | The IJTDH 2024 paper, ORCID, and sample links |

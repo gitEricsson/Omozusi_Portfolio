@@ -165,6 +165,10 @@ document.addEventListener("visibilitychange", () => {
 
 // ---------- scrolling: the portrait recedes, the nav firms up ----------
 const nav = $(".nav");
+// The nav's small copy of her name appears only once the big one has scrolled out from under it.
+new IntersectionObserver(([e]) => nav.classList.toggle("show-name", !e.isIntersecting), {
+  rootMargin: "-72px 0px 0px 0px",
+}).observe(nameEl);
 let lastY = 0, ticking = false;
 function onScroll() {
   const y = scrollY, H = hero.clientHeight;
